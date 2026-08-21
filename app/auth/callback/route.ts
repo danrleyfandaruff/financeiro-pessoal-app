@@ -22,8 +22,18 @@ export async function GET(request: Request) {
         },
       },
     )
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (!error) {
+    const { data: sessionData, error } = await supabase.auth.exchangeCodeForSession(code)
+    if (!error && sessionData.user) {
+      // Verifica se o usuário ainda não passou pelo onboarding (nome vazio = Google OAuth sem configuração)
+      const { data: perfil } = await supabase
+        .from('perfis')
+        .select('nome')
+        .eq('id', sessionData.user.id)
+        .maybeSingle()
+
+      if (!perfil?.nome) {
+        return NextResponse.redirect(`${origin}/onboarding`)
+      }
       return NextResponse.redirect(`${origin}/`)
     }
   }
