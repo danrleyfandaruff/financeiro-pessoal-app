@@ -4,12 +4,24 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
+function Spinner() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"
+      style={{ animation: 'spin .7s linear infinite', flexShrink: 0 }}>
+      <circle cx="9" cy="9" r="7" stroke="currentColor" strokeOpacity=".25" strokeWidth="2.5"/>
+      <path d="M16 9a7 7 0 0 0-7-7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </svg>
+  )
+}
+
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingGoogle, setLoadingGoogle] = useState(false)
   const [tentativas, setTentativas] = useState(0)
   const [bloqueadoAte, setBloqueadoAte] = useState(0)
 
@@ -25,9 +37,11 @@ export default function LoginPage() {
   const restante  = bloqueado ? Math.ceil((bloqueadoAte - agora) / 1000) : 0
   void tick
 
+  const qualquerLoading = loading || loadingGoogle
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (bloqueado) return
+    if (bloqueado || qualquerLoading) return
     setErro('')
     setLoading(true)
     const supabase = createClient()
@@ -35,16 +49,27 @@ export default function LoginPage() {
     if (error) {
       const novasTentativas = tentativas + 1
       setTentativas(novasTentativas)
-      // cooldown crescente: 3s, 10s, 30s, 60s a partir da 2ª tentativa
       const delays = [0, 3, 10, 30, 60]
       const delay = (delays[Math.min(novasTentativas, delays.length - 1)] || 60) * 1000
       setBloqueadoAte(Date.now() + delay)
       setErro('Email ou senha incorretos.')
+      setLoading(false)
     } else {
       router.push('/')
       router.refresh()
+      // mantém loading até a navegação concluir
     }
-    setLoading(false)
+  }
+
+  async function handleGoogle() {
+    if (qualquerLoading) return
+    setLoadingGoogle(true)
+    const supabase = createClient()
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    })
+    // a navegação é feita pelo OAuth — não reseta o loading
   }
 
   return (
@@ -95,21 +120,25 @@ export default function LoginPage() {
           <div>
             <label>Email</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-              placeholder="seu@email.com" required autoComplete="email" />
+              placeholder="seu@email.com" required autoComplete="email"
+              disabled={qualquerLoading} />
           </div>
           <div>
             <label>Senha</label>
             <input type="password" value={senha} onChange={e => setSenha(e.target.value)}
-              placeholder="••••••••" required autoComplete="current-password" />
+              placeholder="••••••••" required autoComplete="current-password"
+              disabled={qualquerLoading} />
           </div>
-          <button type="submit" disabled={loading || bloqueado} className="btn-primary w-full mt-2"
-            style={{ height: 50, opacity: bloqueado ? .5 : 1 }}>
+          <button type="submit" disabled={qualquerLoading || bloqueado} className="btn-primary w-full mt-2"
+            style={{ height: 50, opacity: (bloqueado || qualquerLoading) ? .6 : 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            {loading && <Spinner />}
             {loading ? 'Entrando…' : bloqueado ? `Aguarde ${restante}s…` : 'Entrar'}
           </button>
         </form>
 
         {/* Divisor */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0 4px', color: 'var(--t3)', fontSize: 13 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0 12px', color: 'var(--t3)', fontSize: 13 }}>
           <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
           <span>ou</span>
           <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
@@ -118,31 +147,33 @@ export default function LoginPage() {
         {/* Botão Google */}
         <button
           type="button"
-          onClick={async () => {
-            const supabase = createClient()
-            await supabase.auth.signInWithOAuth({
-              provider: 'google',
-              options: { redirectTo: `${window.location.origin}/auth/callback` },
-            })
-          }}
+          onClick={handleGoogle}
+          disabled={qualquerLoading}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            width: '100%', height: 48, borderRadius: 12, cursor: 'pointer',
+            width: '100%', height: 48, borderRadius: 12,
+            cursor: qualquerLoading ? 'not-allowed' : 'pointer',
             border: '1px solid var(--border)',
             background: 'var(--s2)',
             color: 'var(--t1)', fontSize: 15, fontWeight: 600,
-            transition: 'background .15s',
+            opacity: qualquerLoading ? .6 : 1,
+            transition: 'background .15s, opacity .15s',
           }}
-          onMouseOver={e => (e.currentTarget.style.background = 'var(--s3)')}
+          onMouseOver={e => { if (!qualquerLoading) e.currentTarget.style.background = 'var(--s3)' }}
           onMouseOut={e => (e.currentTarget.style.background = 'var(--s2)')}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
-            <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.7 2.4 30.2 0 24 0 14.7 0 6.7 5.5 2.7 13.5l7.8 6.1C12.5 13.1 17.8 9.5 24 9.5z"/>
-            <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17z"/>
-            <path fill="#FBBC05" d="M10.5 28.4A14.5 14.5 0 0 1 9.5 24c0-1.5.2-3 .6-4.4L2.3 13.5A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.7l7.9-6.3z"/>
-            <path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.2-7.7 2.2-6.2 0-11.5-4.2-13.4-9.8l-7.9 6.1C6.7 42.5 14.7 48 24 48z"/>
-          </svg>
-          Entrar com Google
+          {loadingGoogle
+            ? <Spinner />
+            : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+                <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.7 2.4 30.2 0 24 0 14.7 0 6.7 5.5 2.7 13.5l7.8 6.1C12.5 13.1 17.8 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17z"/>
+                <path fill="#FBBC05" d="M10.5 28.4A14.5 14.5 0 0 1 9.5 24c0-1.5.2-3 .6-4.4L2.3 13.5A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.7l7.9-6.3z"/>
+                <path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.2-7.7 2.2-6.2 0-11.5-4.2-13.4-9.8l-7.9 6.1C6.7 42.5 14.7 48 24 48z"/>
+              </svg>
+            )
+          }
+          {loadingGoogle ? 'Redirecionando…' : 'Entrar com Google'}
         </button>
       </div>
 
