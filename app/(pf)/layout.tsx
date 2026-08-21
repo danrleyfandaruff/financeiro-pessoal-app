@@ -14,7 +14,7 @@ export default async function PFLayout({ children }: { children: React.ReactNode
 
   return (
     <div style={{ height: '100svh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg)' }}>
-      <Navbar nome={perfil?.nome ?? null} email={user.email ?? null} contaAtiva="PF" />
+      <Navbar nome={perfil?.nome ?? null} email={user.email ?? null} contaAtiva="PF" tipoUsuario={tipo as 'PJ' | 'PF' | 'AMBOS'} />
       <NavTabsPFDesktop />
       <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch' as any }}>
         <div style={{ maxWidth: 1152, margin: '0 auto', padding: '20px 16px 28px' }}>

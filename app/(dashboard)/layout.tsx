@@ -32,7 +32,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       overflow: 'hidden',
       background: 'var(--bg)',
     }}>
-      <Navbar nome={perfil?.nome ?? null} email={user.email ?? null} contaAtiva={tipo === 'AMBOS' ? 'PJ' : undefined} />
+      <Navbar nome={perfil?.nome ?? null} email={user.email ?? null} contaAtiva="PJ" tipoUsuario={tipo as 'PJ' | 'PF' | 'AMBOS'} />
       <NavTabsDesktop />
       <main style={{
         flex: 1,

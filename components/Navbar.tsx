@@ -6,9 +6,10 @@ interface NavbarProps {
   nome?: string | null
   email?: string | null
   contaAtiva?: 'PJ' | 'PF'
+  tipoUsuario?: 'PJ' | 'PF' | 'AMBOS'
 }
 
-export default function Navbar({ nome, email, contaAtiva }: NavbarProps) {
+export default function Navbar({ nome, email, contaAtiva, tipoUsuario }: NavbarProps) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -19,14 +20,24 @@ export default function Navbar({ nome, email, contaAtiva }: NavbarProps) {
     router.refresh()
   }
 
-  function trocarConta() {
-    document.cookie = 'conta-ativa=;path=/;max-age=0'
-    router.push('/selecionar-conta')
+  function handleBadgeClick() {
+    if (tipoUsuario === 'AMBOS') {
+      document.cookie = 'conta-ativa=;path=/;max-age=0'
+      router.push('/selecionar-conta')
+    } else {
+      router.push('/perfil')
+    }
   }
 
-  function irPerfil() {
-    router.push('/perfil')
-  }
+  const badgeLabel = tipoUsuario === 'AMBOS'
+    ? (contaAtiva ?? 'PJ')
+    : (tipoUsuario ?? contaAtiva ?? 'PJ')
+
+  const badgeTitle = tipoUsuario === 'AMBOS'
+    ? 'Trocar conta'
+    : 'Gerenciar contas'
+
+  const isPF = badgeLabel === 'PF'
 
   return (
     <header
@@ -41,25 +52,46 @@ export default function Navbar({ nome, email, contaAtiva }: NavbarProps) {
       }}
       className="sticky top-0 z-30">
 
-      {/* Left: user info (desktop) + badge conta */}
+      {/* Left: user info + badge conta */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button onClick={irPerfil} className="hidden sm:flex flex-col leading-none gap-0.5"
+        {/* Ícone de perfil (sempre visível, mobile e desktop) */}
+        <button onClick={() => router.push('/perfil')} title="Perfil"
+          style={{
+            width: 32, height: 32, borderRadius: 10,
+            background: 'var(--s2)', border: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', flexShrink: 0,
+          }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="5.5" r="2.5" stroke="var(--t2)" strokeWidth="1.4"/>
+            <path d="M2.5 13c0-3.038 2.462-5.5 5.5-5.5s5.5 2.462 5.5 5.5" stroke="var(--t2)" strokeWidth="1.4" strokeLinecap="round"/>
+          </svg>
+        </button>
+
+        {/* Nome + email (só desktop) */}
+        <button onClick={() => router.push('/perfil')} className="hidden sm:flex flex-col leading-none gap-0.5"
           style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
           <span style={{ color: 'var(--t1)', fontWeight: 600, fontSize: 13 }}>{nome || 'Usuário'}</span>
           {email && <span style={{ color: 'var(--t3)', fontSize: 11 }}>{email}</span>}
         </button>
-        {contaAtiva && (
-          <button onClick={trocarConta} title="Trocar conta"
-            style={{
-              fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 8,
-              background: contaAtiva === 'PF' ? 'rgba(99,102,241,.12)' : 'var(--accent-dim)',
-              color: contaAtiva === 'PF' ? '#6366f1' : 'var(--accent)',
-              border: `1px solid ${contaAtiva === 'PF' ? 'rgba(99,102,241,.25)' : 'rgba(232,168,12,.3)'}`,
-              cursor: 'pointer',
-            }}>
-            {contaAtiva}
-          </button>
-        )}
+
+        {/* Badge de conta — sempre visível */}
+        <button onClick={handleBadgeClick} title={badgeTitle}
+          style={{
+            fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 8,
+            background: isPF ? 'rgba(99,102,241,.12)' : 'var(--accent-dim)',
+            color: isPF ? '#6366f1' : 'var(--accent)',
+            border: `1px solid ${isPF ? 'rgba(99,102,241,.25)' : 'rgba(232,168,12,.3)'}`,
+            cursor: 'pointer', flexShrink: 0,
+          }}>
+          {badgeLabel}
+          {tipoUsuario !== 'AMBOS' && (
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+              style={{ marginLeft: 4, verticalAlign: 'middle', opacity: .7 }}>
+              <path d="M2 3.5L5 6.5 8 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          )}
+        </button>
       </div>
 
       {/* Center: logo */}
