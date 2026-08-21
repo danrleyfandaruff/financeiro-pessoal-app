@@ -5,11 +5,20 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import type { TipoConta } from '@/lib/types'
 
+const SENHA_REGRAS = [
+  { id: 'len',     label: 'Mínimo 8 caracteres',       ok: (s: string) => s.length >= 8 },
+  { id: 'upper',   label: 'Letra maiúscula (A-Z)',      ok: (s: string) => /[A-Z]/.test(s) },
+  { id: 'lower',   label: 'Letra minúscula (a-z)',      ok: (s: string) => /[a-z]/.test(s) },
+  { id: 'number',  label: 'Número (0-9)',               ok: (s: string) => /[0-9]/.test(s) },
+  { id: 'special', label: 'Caractere especial (!@#…)',  ok: (s: string) => /[^A-Za-z0-9]/.test(s) },
+]
+
 export default function CadastroPage() {
   const router = useRouter()
   const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
+  const [showSenhaHint, setShowSenhaHint] = useState(false)
   const [temPJ, setTemPJ] = useState(true)
   const [temPF, setTemPF] = useState(false)
   const [erro, setErro] = useState('')
@@ -21,10 +30,13 @@ export default function CadastroPage() {
     return 'PJ'
   }
 
+  const senhaValida = SENHA_REGRAS.every(r => r.ok(senha))
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setErro('')
     if (!temPJ && !temPF) { setErro('Selecione ao menos um tipo de conta.'); return }
+    if (!senhaValida) { setErro('A senha não atende aos requisitos mínimos de segurança.'); setShowSenhaHint(true); return }
     setLoading(true)
     const supabase = createClient()
     const tc = tipoConta()
@@ -41,7 +53,7 @@ export default function CadastroPage() {
       return
     }
     if (data.user) {
-      // tenta upsert (funciona se auto-confirm estiver ligado)
+      // fallback: o trigger cria o perfil automaticamente, mas fazemos upsert como garantia
       await supabase.from('perfis').upsert({ id: data.user.id, nome, tipo_conta: tc })
     }
     router.push('/')
@@ -105,8 +117,30 @@ export default function CadastroPage() {
           </div>
           <div>
             <label>Senha</label>
-            <input type="password" value={senha} onChange={e => setSenha(e.target.value)}
-              placeholder="Mínimo 6 caracteres" minLength={6} required autoComplete="new-password" />
+            <input
+              type="password"
+              value={senha}
+              onChange={e => setSenha(e.target.value)}
+              onFocus={() => setShowSenhaHint(true)}
+              placeholder="Mínimo 8 caracteres"
+              required
+              autoComplete="new-password"
+            />
+            {showSenhaHint && (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {SENHA_REGRAS.map(r => {
+                  const ok = r.ok(senha)
+                  return (
+                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <div style={{ width: 16, height: 16, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: ok ? 'rgba(13,153,101,.15)' : 'var(--s2)', border: `1px solid ${ok ? 'rgba(13,153,101,.4)' : 'var(--border)'}`, transition: 'all .15s' }}>
+                        {ok && <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.2 2.2L8 3" stroke="var(--emerald)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </div>
+                      <span style={{ fontSize: 12, color: ok ? 'var(--emerald)' : 'var(--t3)', transition: 'color .15s' }}>{r.label}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* Tipo de conta */}
