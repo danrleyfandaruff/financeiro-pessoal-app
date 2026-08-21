@@ -32,14 +32,16 @@ export default function LoginPage() {
 
       {/* Brand mark */}
       <div className="mb-8 flex flex-col items-center gap-3">
-        <svg width="52" height="42" viewBox="0 0 52 42" fill="none" aria-hidden="true">
-          <rect x="0" y="18" width="14" height="24" rx="3" fill="var(--accent)"/>
-          <rect x="19" y="8" width="14" height="34" rx="3" fill="var(--accent)"/>
-          <rect x="38" y="0" width="14" height="42" rx="3" fill="var(--t1)"/>
+        <svg width="56" height="42" viewBox="0 0 56 42" fill="none" aria-hidden="true">
+          <rect x="0"  y="30" width="12" height="12" rx="3" fill="var(--t3)"/>
+          <rect x="15" y="18" width="12" height="24" rx="3" fill="var(--accent)"/>
+          <rect x="30" y="8"  width="12" height="34" rx="3" fill="var(--accent)"/>
+          <rect x="45" y="0"  width="11" height="42" rx="3" fill="var(--t1)"/>
+          <polyline points="6,30 21,18 36,8 50.5,0" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" opacity="0.45"/>
         </svg>
         <div className="text-center">
-          <h1 style={{ fontFamily: 'Sora, sans-serif', fontSize: 22, fontWeight: 800, color: 'var(--t1)', lineHeight: 1.2 }}>
-            Controle Financeiro
+          <h1 style={{ fontFamily: 'Sora, sans-serif', fontSize: 24, fontWeight: 800, color: 'var(--t1)', lineHeight: 1.2 }}>
+            Restarta<span style={{ color: 'var(--accent)' }}> Finance</span>
           </h1>
           <p style={{ color: 'var(--t2)', fontSize: 14, marginTop: 4 }}>Acesse sua conta</p>
         </div>

@@ -39,14 +39,16 @@ export default function Navbar({ nome, email }: NavbarProps) {
 
       {/* Center: logo — truly centered in the header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
-        <svg width="22" height="18" viewBox="0 0 22 18" fill="none" aria-hidden="true">
-          <rect x="0" y="8" width="6" height="10" rx="1.5" fill="var(--accent)"/>
-          <rect x="8" y="3" width="6" height="15" rx="1.5" fill="var(--accent)"/>
-          <rect x="16" y="0" width="6" height="18" rx="1.5" fill="var(--t1)"/>
+        <svg width="24" height="18" viewBox="0 0 24 18" fill="none" aria-hidden="true">
+          <rect x="0"  y="13" width="5" height="5"  rx="1.2" fill="var(--t3)"/>
+          <rect x="6"  y="8"  width="5" height="10" rx="1.2" fill="var(--accent)"/>
+          <rect x="12" y="3"  width="5" height="15" rx="1.2" fill="var(--accent)"/>
+          <rect x="18" y="0"  width="6" height="18" rx="1.2" fill="var(--t1)"/>
+          <polyline points="2.5,13 8.5,8 14.5,3 21,0" stroke="var(--accent)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" opacity="0.5"/>
         </svg>
         <span style={{ fontFamily: 'Sora, sans-serif', fontWeight: 700, fontSize: 15, color: 'var(--t1)' }}
           className="hidden sm:block">
-          Controle<span style={{ color: 'var(--accent)' }}> Fin.</span>
+          Restarta<span style={{ color: 'var(--accent)' }}> Finance</span>
         </span>
       </div>
 
