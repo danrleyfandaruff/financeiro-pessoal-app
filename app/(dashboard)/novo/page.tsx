@@ -4,14 +4,13 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { CATEGORIAS } from '@/lib/categorias'
-import type { Categoria } from '@/lib/types'
 
 export default function NovoGastoPage() {
   const router = useRouter()
   const hoje = new Date().toISOString().split('T')[0]
 
   const [valor, setValor] = useState('')
-  const [categoria, setCategoria] = useState<Categoria>('Alimentação')
+  const [categoria, setCategoria] = useState<string>('Alimentação')
   const [descricao, setDescricao] = useState('')
   const [data, setData] = useState(hoje)
   const [erro, setErro] = useState('')
