@@ -3,33 +3,49 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import type { TipoConta } from '@/lib/types'
 
 export default function CadastroPage() {
   const router = useRouter()
   const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
+  const [temPJ, setTemPJ] = useState(true)
+  const [temPF, setTemPF] = useState(false)
   const [erro, setErro] = useState('')
   const [loading, setLoading] = useState(false)
+
+  function tipoConta(): TipoConta {
+    if (temPJ && temPF) return 'AMBOS'
+    if (temPF) return 'PF'
+    return 'PJ'
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setErro('')
+    if (!temPJ && !temPF) { setErro('Selecione ao menos um tipo de conta.'); return }
     setLoading(true)
     const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
+    const tc = tipoConta()
+    const { data, error } = await supabase.auth.signUp({
       email,
       password: senha,
-      options: { data: { nome } },
+      options: { data: { nome, tipo_conta: tc } },
     })
     if (error) {
       setErro(error.message === 'User already registered'
         ? 'Este email já está cadastrado.'
         : 'Erro ao criar conta. Tente novamente.')
-    } else {
-      router.push('/')
-      router.refresh()
+      setLoading(false)
+      return
     }
+    if (data.user) {
+      // tenta upsert (funciona se auto-confirm estiver ligado)
+      await supabase.from('perfis').upsert({ id: data.user.id, nome, tipo_conta: tc })
+    }
+    router.push('/')
+    router.refresh()
     setLoading(false)
   }
 
@@ -92,6 +108,37 @@ export default function CadastroPage() {
             <input type="password" value={senha} onChange={e => setSenha(e.target.value)}
               placeholder="Mínimo 6 caracteres" minLength={6} required autoComplete="new-password" />
           </div>
+
+          {/* Tipo de conta */}
+          <div>
+            <label style={{ marginBottom: 10, display: 'block' }}>Tipo de conta</label>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {[{ key: 'PJ', label: 'Empresa (PJ)', desc: 'Caixa, contas a pagar/receber', checked: temPJ, set: setTemPJ },
+                { key: 'PF', label: 'Pessoal (PF)', desc: 'Salário, cartão, metas', checked: temPF, set: setTemPF }
+              ].map(({ key, label, desc, checked, set }) => (
+                <button key={key} type="button" onClick={() => set(!checked)}
+                  style={{
+                    flex: 1, padding: '12px 10px', borderRadius: 14, textAlign: 'left',
+                    border: `2px solid ${checked ? 'var(--accent)' : 'var(--border)'}`,
+                    background: checked ? 'var(--accent-dim)' : 'var(--s2)',
+                    cursor: 'pointer', transition: 'all .15s',
+                  }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span style={{
+                      width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                      background: checked ? 'var(--accent)' : 'var(--border)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {checked && <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="#07090f" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                    </span>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--t1)' }}>{label}</span>
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--t3)', paddingLeft: 22 }}>{desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <button type="submit" disabled={loading} className="btn-primary w-full mt-2"
             style={{ height: 50 }}>
             {loading ? 'Criando conta…' : 'Criar conta'}

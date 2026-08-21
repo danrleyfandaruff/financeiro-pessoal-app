@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { fmt, fmtData, hoje, PERIODICIDADES } from '@/lib/utils'
 import type { Recorrencia, ContaPagar } from '@/lib/types'
 import Modal from '@/components/shared/Modal'
+import ConfirmModal from '@/components/ConfirmModal'
 
 export default function RecorrenciasPage() {
   const supabase = createClient()
@@ -14,6 +15,8 @@ export default function RecorrenciasPage() {
   const [showForm, setShowForm] = useState(false)
   const [categorias, setCategorias] = useState<string[]>([])
   const [gerandoId, setGerandoId] = useState<string | null>(null)
+  const [dlg, setDlg] = useState<{ msg: string; onOk: () => void; confirmLabel?: string; danger?: boolean } | null>(null)
+  const [errMsg, setErrMsg] = useState<string | null>(null)
 
   const [fTipo, setFTipo] = useState<'entrada' | 'saida'>('saida')
   const [fDesc, setFDesc] = useState('')
@@ -72,19 +75,31 @@ export default function RecorrenciasPage() {
   async function gerarParcela(recId: string) {
     setGerandoId(recId)
     const { error } = await supabase.rpc('gerar_proxima_parcela', { p_rec_id: recId })
-    if (error) alert(error.message)
+    if (error) setErrMsg(error.message)
     setGerandoId(null)
     load()
   }
 
-  async function cancelar(id: string) {
-    if (!confirm('Cancelar esta recorrência?')) return
-    await supabase.from('recorrencias').update({ cancelado: true }).eq('id', id)
-    load()
+  function cancelar(id: string) {
+    setDlg({
+      msg: 'Tem certeza que deseja cancelar esta recorrência? Os lançamentos já gerados serão mantidos.',
+      confirmLabel: 'Cancelar recorrência',
+      danger: false,
+      onOk: async () => {
+        await supabase.from('recorrencias').update({ cancelado: true }).eq('id', id)
+        load()
+      },
+    })
   }
 
   return (
     <div>
+      {errMsg && (
+        <div style={{ background: 'rgba(251,113,133,.1)', border: '1px solid rgba(251,113,133,.3)', color: 'var(--rose)', borderRadius: 12, padding: '10px 14px', fontSize: 14, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{errMsg}</span>
+          <button onClick={() => setErrMsg(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--rose)', fontWeight: 700, fontSize: 16 }}>×</button>
+        </div>
+      )}
       {showForm && (
         <Modal title="Nova recorrência / parcelamento" onClose={() => setShowForm(false)}>
           <form onSubmit={salvar} className="space-y-4">
@@ -223,6 +238,15 @@ export default function RecorrenciasPage() {
             )
           })}
         </div>
+      )}
+      {dlg && (
+        <ConfirmModal
+          message={dlg.msg}
+          confirmLabel={dlg.confirmLabel ?? 'Confirmar'}
+          danger={dlg.danger ?? true}
+          onConfirm={() => { dlg.onOk(); setDlg(null) }}
+          onCancel={() => setDlg(null)}
+        />
       )}
     </div>
   )

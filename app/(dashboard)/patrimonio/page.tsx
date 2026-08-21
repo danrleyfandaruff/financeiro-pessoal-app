@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { fmt, fmtData, hoje } from '@/lib/utils'
 import type { Patrimonio } from '@/lib/types'
 import Modal from '@/components/shared/Modal'
+import ConfirmModal from '@/components/ConfirmModal'
 
 export default function PatrimonioPage() {
   const supabase = createClient()
@@ -12,6 +13,7 @@ export default function PatrimonioPage() {
   const [showForm, setShowForm] = useState(false)
   const [editItem, setEditItem] = useState<Patrimonio | null>(null)
   const [categorias, setCategorias] = useState<string[]>([])
+  const [dlg, setDlg] = useState<{ msg: string; onOk: () => void } | null>(null)
 
   const [fNome, setFNome] = useState('')
   const [fDesc, setFDesc] = useState('')
@@ -58,10 +60,14 @@ export default function PatrimonioPage() {
     setSaving(false); setShowForm(false); load()
   }
 
-  async function excluir(id: string) {
-    if (!confirm('Excluir este bem?')) return
-    await supabase.from('patrimonio').delete().eq('id', id)
-    load()
+  function excluir(id: string) {
+    setDlg({
+      msg: 'Tem certeza que deseja excluir este bem? Essa ação não pode ser desfeita.',
+      onOk: async () => {
+        await supabase.from('patrimonio').delete().eq('id', id)
+        load()
+      },
+    })
   }
 
   const total = bens.reduce((s, b) => s + Number(b.valor), 0)
@@ -184,6 +190,14 @@ export default function PatrimonioPage() {
             </div>
           ))}
         </div>
+      )}
+      {dlg && (
+        <ConfirmModal
+          message={dlg.msg}
+          confirmLabel="Excluir"
+          onConfirm={() => { dlg.onOk(); setDlg(null) }}
+          onCancel={() => setDlg(null)}
+        />
       )}
     </div>
   )

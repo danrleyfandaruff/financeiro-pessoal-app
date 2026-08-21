@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import Navbar from '@/components/Navbar'
 import { NavTabsDesktop, NavTabsMobile } from '@/components/NavTabs'
 
@@ -8,7 +9,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: perfil } = await supabase.from('perfis').select('nome').eq('id', user.id).single()
+  const { data: perfil } = await supabase.from('perfis').select('nome,tipo_conta').eq('id', user.id).single()
+
+  // fallback: lê do user_metadata caso a migration ainda não tenha rodado
+  const tipo = (perfil?.tipo_conta ?? user.user_metadata?.tipo_conta ?? 'PJ') as string
+
+  // usuário só tem PF → manda pro módulo PF
+  if (tipo === 'PF') redirect('/pf')
+
+  // usuário tem os dois → verifica o cookie de escolha
+  if (tipo === 'AMBOS') {
+    const cookieStore = await cookies()
+    const contaAtiva = cookieStore.get('conta-ativa')?.value
+    if (contaAtiva !== 'PJ') redirect('/selecionar-conta')
+  }
 
   return (
     <div style={{
@@ -18,7 +32,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       overflow: 'hidden',
       background: 'var(--bg)',
     }}>
-      <Navbar nome={perfil?.nome ?? null} email={user.email ?? null} />
+      <Navbar nome={perfil?.nome ?? null} email={user.email ?? null} contaAtiva={tipo === 'AMBOS' ? 'PJ' : undefined} />
       <NavTabsDesktop />
       <main style={{
         flex: 1,

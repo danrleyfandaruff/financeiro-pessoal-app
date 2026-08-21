@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Categoria } from '@/lib/types'
 import Modal from '@/components/shared/Modal'
+import ConfirmModal from '@/components/ConfirmModal'
 
 export default function CategoriasPage() {
   const supabase = createClient()
@@ -12,6 +13,7 @@ export default function CategoriasPage() {
   const [fNome, setFNome] = useState('')
   const [fTipo, setFTipo] = useState<'entrada' | 'saida' | 'ambos'>('saida')
   const [saving, setSaving] = useState(false)
+  const [dlg, setDlg] = useState<{ msg: string; onOk: () => void } | null>(null)
 
   async function load() {
     setLoading(true)
@@ -30,10 +32,14 @@ export default function CategoriasPage() {
     setSaving(false); setShowForm(false); setFNome(''); load()
   }
 
-  async function excluir(id: string) {
-    if (!confirm('Excluir esta categoria?')) return
-    await supabase.from('categorias').delete().eq('id', id)
-    load()
+  function excluir(id: string) {
+    setDlg({
+      msg: 'Tem certeza que deseja excluir esta categoria?',
+      onOk: async () => {
+        await supabase.from('categorias').delete().eq('id', id)
+        load()
+      },
+    })
   }
 
   const grupos = {
@@ -130,6 +136,14 @@ export default function CategoriasPage() {
             </div>
           )}
         </div>
+      )}
+      {dlg && (
+        <ConfirmModal
+          message={dlg.msg}
+          confirmLabel="Excluir"
+          onConfirm={() => { dlg.onOk(); setDlg(null) }}
+          onCancel={() => setDlg(null)}
+        />
       )}
     </div>
   )
