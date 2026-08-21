@@ -3,10 +3,10 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell,
 } from 'recharts'
-import type { Gasto } from '@/lib/types'
+import type { Caixa } from '@/lib/types'
 
 interface Props {
-  gastos: Gasto[]
+  gastos: Caixa[]
 }
 
 const CORES = [
@@ -18,7 +18,8 @@ const CORES = [
 export default function GraficoCategorias({ gastos }: Props) {
   const porCategoria: Record<string, number> = {}
   gastos.forEach(g => {
-    porCategoria[g.categoria] = (porCategoria[g.categoria] || 0) + Number(g.valor)
+    const k = g.categoria || 'Sem categoria'
+    porCategoria[k] = (porCategoria[k] || 0) + Number(g.valor)
   })
 
   const data = Object.entries(porCategoria)

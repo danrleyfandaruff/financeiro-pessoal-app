@@ -78,7 +78,7 @@ export default function NovoGastoPage() {
           <label>Categoria</label>
           <select
             value={categoria}
-            onChange={e => setCategoria(e.target.value as Categoria)}
+            onChange={e => setCategoria(e.target.value)}
           >
             {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
           </select>

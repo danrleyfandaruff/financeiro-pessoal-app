@@ -1,10 +1,10 @@
 'use client'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { Gasto } from '@/lib/types'
+import type { Caixa } from '@/lib/types'
 
 interface Props {
-  gastos: Gasto[]
+  gastos: Caixa[]
   onDelete: (id: string) => void
 }
 

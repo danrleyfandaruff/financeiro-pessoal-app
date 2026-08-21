@@ -1,7 +1,7 @@
-import type { Gasto } from '@/lib/types'
+import type { Caixa } from '@/lib/types'
 
 interface Props {
-  gastos: Gasto[]
+  gastos: Caixa[]
 }
 
 export default function ResumoCards({ gastos }: Props) {

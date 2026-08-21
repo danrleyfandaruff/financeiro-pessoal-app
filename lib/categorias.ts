@@ -1,6 +1,4 @@
-import type { Categoria } from './types'
-
-export const CATEGORIAS: Categoria[] = [
+export const CATEGORIAS: string[] = [
   'Alimentação',
   'Mercado',
   'Restaurante',

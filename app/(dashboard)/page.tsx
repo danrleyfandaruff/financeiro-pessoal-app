@@ -51,8 +51,8 @@ export default function ResumoPage() {
     const cxData = (cx.data as Caixa[]) || []
     setCaixa(cxData)
     setRecentes(cxData.slice(0, 8))
-    setAReceber((rec.data || []).reduce((s: number, r: ContaReceber) => s + Number(r.valor), 0))
-    setAPagar((pag.data || []).reduce((s: number, p: ContaPagar) => s + Number(p.valor), 0))
+    setAReceber(((rec.data || []) as { valor: number }[]).reduce((s, r) => s + Number(r.valor), 0))
+    setAPagar(((pag.data || []) as { valor: number }[]).reduce((s, p) => s + Number(p.valor), 0))
 
     const byMes: Record<string, EvolucaoMensal> = {}
     ;((ev.data as Caixa[]) || []).forEach(r => {
