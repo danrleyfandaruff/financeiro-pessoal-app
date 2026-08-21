@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { PfCartao, PfLancamentoCartao } from '@/lib/types'
+import type { PfCartao, PfLancamentoCartao, PfBanco } from '@/lib/types'
 import ConfirmModal from '@/components/ConfirmModal'
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -17,6 +17,8 @@ export default function CartaoPage() {
   const supabase = createClient()
   const [cartoes, setCartoes] = useState<PfCartao[]>([])
   const [lancamentos, setLancamentos] = useState<PfLancamentoCartao[]>([])
+  const [faturasPagas, setFaturasPagas] = useState<Set<string>>(new Set())
+  const [bancos, setBancos] = useState<PfBanco[]>([])
   const [loading, setLoading] = useState(true)
   const [showCartaoForm, setShowCartaoForm] = useState(false)
   const [showLancForm, setShowLancForm] = useState(false)
@@ -37,19 +39,26 @@ export default function CartaoPage() {
   const [lCat, setLCat] = useState('')
   const [lParcelas, setLParcelas] = useState('1')
   const [saving, setSaving] = useState(false)
-  const [dlg, setDlg] = useState<{ msg: string; onOk: () => void } | null>(null)
-  const [showPagarFatura, setShowPagarFatura] = useState<{ cartao: typeof cartoes[0]; fatura: number } | null>(null)
+  const [dlg, setDlg] = useState<{ msg: string; danger?: boolean; onOk: () => void } | null>(null)
+  const [showPagarFatura, setShowPagarFatura] = useState<{ cartao: PfCartao; fatura: number } | null>(null)
   const [faturaData, setFaturaData] = useState('')
+  const [faturaBancoId, setFaturaBancoId] = useState('')
 
   const mes = mesAtual()
 
   const load = useCallback(async () => {
-    const [c, l] = await Promise.all([
+    const inicio = `${mes}-01`
+    const fim    = `${mes}-31`
+    const [c, l, fp, b] = await Promise.all([
       supabase.from('pf_cartoes').select('*').order('nome'),
-      supabase.from('pf_lancamentos_cartao').select('*').gte('data', `${mes}-01`).lte('data', `${mes}-31`).order('data', { ascending: false }),
+      supabase.from('pf_lancamentos_cartao').select('*').gte('data', inicio).lte('data', fim).order('data', { ascending: false }),
+      supabase.from('pf_caixa').select('referencia_id').eq('origem', 'pagamento_fatura').gte('data', inicio).lte('data', fim),
+      supabase.from('pf_bancos').select('*').order('nome'),
     ])
     setCartoes((c.data as PfCartao[]) || [])
     setLancamentos((l.data as PfLancamentoCartao[]) || [])
+    setFaturasPagas(new Set((fp.data || []).map((r: { referencia_id: string }) => r.referencia_id)))
+    setBancos((b.data as PfBanco[]) || [])
     setLoading(false)
   }, [mes])
 
@@ -69,9 +78,11 @@ export default function CartaoPage() {
 
   function excluirCartao(id: string) {
     setDlg({
-      msg: 'Tem certeza? Isso irá excluir o cartão e todos os lançamentos associados.',
+      msg: 'Excluir o cartão e todos os lançamentos? Se a fatura foi paga, o registro no caixa também será removido.',
+      danger: true,
       onOk: async () => {
         await supabase.from('pf_lancamentos_cartao').delete().eq('cartao_id', id)
+        await supabase.from('pf_caixa').delete().eq('referencia_id', id).eq('origem', 'pagamento_fatura')
         await supabase.from('pf_cartoes').delete().eq('id', id)
         await load()
       },
@@ -101,9 +112,26 @@ export default function CartaoPage() {
     await load(); setSaving(false)
   }
 
-  async function excluirLanc(id: string) {
-    await supabase.from('pf_lancamentos_cartao').delete().eq('id', id)
-    setLancamentos(l => l.filter(x => x.id !== id))
+  function excluirLanc(lancamento: PfLancamentoCartao) {
+    const faturaPaga = faturasPagas.has(lancamento.cartao_id)
+    if (faturaPaga) {
+      setDlg({
+        msg: `Atenção: a fatura deste cartão já foi paga e está registrada no caixa. Excluir este lançamento não removerá o pagamento do caixa. Deseja continuar mesmo assim?`,
+        danger: true,
+        onOk: async () => {
+          await supabase.from('pf_lancamentos_cartao').delete().eq('id', lancamento.id)
+          setLancamentos(l => l.filter(x => x.id !== lancamento.id))
+        },
+      })
+    } else {
+      setDlg({
+        msg: 'Excluir este lançamento?',
+        onOk: async () => {
+          await supabase.from('pf_lancamentos_cartao').delete().eq('id', lancamento.id)
+          setLancamentos(l => l.filter(x => x.id !== lancamento.id))
+        },
+      })
+    }
   }
 
   async function pagarFatura() {
@@ -117,8 +145,10 @@ export default function CartaoPage() {
       valor: showPagarFatura.fatura, data: faturaData,
       categoria: 'Cartão de crédito', origem: 'pagamento_fatura',
       referencia_id: showPagarFatura.cartao.id,
+      banco_id: faturaBancoId || null,
     })
-    setShowPagarFatura(null); setFaturaData(''); setSaving(false)
+    setShowPagarFatura(null); setFaturaData(''); setFaturaBancoId(''); setSaving(false)
+    load()
   }
 
   const faturaTotal = lancamentos.reduce((s, l) => s + Number(l.valor), 0)
@@ -149,12 +179,12 @@ export default function CartaoPage() {
         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--t3)' }}>Carregando…</div>
       ) : (
         <>
-          {/* Cartões */}
           {cartoes.map(c => {
             const lancsCartao = lancamentos.filter(l => l.cartao_id === c.id)
             const faturaCartao = lancsCartao.reduce((s, l) => s + Number(l.valor), 0)
             const usoPct = c.limite > 0 ? Math.min(100, (faturaCartao / c.limite) * 100) : 0
             const aberto = cartaoAberto === c.id
+            const faturaPaga = faturasPagas.has(c.id)
 
             return (
               <div key={c.id} style={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 18, overflow: 'hidden' }}>
@@ -163,7 +193,10 @@ export default function CartaoPage() {
                     <span style={{ fontSize: 10, color: '#fff', fontWeight: 700 }}>{c.bandeira || '💳'}</span>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontWeight: 700, fontSize: 14, color: 'var(--t1)', marginBottom: 2 }}>{c.nome}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <p style={{ fontWeight: 700, fontSize: 14, color: 'var(--t1)', marginBottom: 2 }}>{c.nome}</p>
+                      {faturaPaga && <span style={{ fontSize: 10, color: 'var(--emerald)', background: 'rgba(13,153,101,.1)', border: '1px solid rgba(13,153,101,.2)', borderRadius: 6, padding: '1px 6px', fontWeight: 600 }}>Paga ✓</span>}
+                    </div>
                     <p style={{ fontSize: 11, color: 'var(--t3)' }}>Fecha dia {c.dia_fechamento} · Vence dia {c.dia_vencimento}</p>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -183,6 +216,11 @@ export default function CartaoPage() {
 
                 {aberto && (
                   <div style={{ borderTop: '1px solid var(--border)', marginTop: 8 }}>
+                    {faturaPaga && (
+                      <div style={{ margin: '0 18px 8px', padding: '8px 12px', background: 'rgba(13,153,101,.06)', border: '1px solid rgba(13,153,101,.2)', borderRadius: 10, fontSize: 12, color: 'var(--emerald)' }}>
+                        Fatura paga — para remover lançamentos, desfaça o pagamento no Caixa primeiro.
+                      </div>
+                    )}
                     {lancsCartao.length === 0 ? (
                       <p style={{ padding: '16px 18px', fontSize: 13, color: 'var(--t3)' }}>Nenhum lançamento neste mês.</p>
                     ) : lancsCartao.map((l, i) => (
@@ -192,12 +230,18 @@ export default function CartaoPage() {
                           <p style={{ fontSize: 11, color: 'var(--t3)' }}>{new Date(l.data + 'T12:00').toLocaleDateString('pt-BR')}{l.categoria && ` · ${l.categoria}`}</p>
                         </div>
                         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)', flexShrink: 0 }} className="tabular">{fmt(Number(l.valor))}</span>
-                        <button onClick={() => excluirLanc(l.id)} style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--s2)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}>✕</button>
+                        <button
+                          onClick={() => excluirLanc(l)}
+                          style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: faturaPaga ? 'var(--s2)' : 'var(--s2)', cursor: 'pointer', fontSize: 12, flexShrink: 0, color: faturaPaga ? 'var(--t3)' : 'inherit' }}
+                          title={faturaPaga ? 'Fatura já paga — isso não remove o pagamento do caixa' : 'Excluir lançamento'}
+                        >
+                          {faturaPaga ? '⚠' : '✕'}
+                        </button>
                       </div>
                     ))}
                     <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      {faturaCartao > 0 && (
-                        <button onClick={() => { setShowPagarFatura({ cartao: c, fatura: faturaCartao }); setFaturaData(new Date().toISOString().split('T')[0]) }}
+                      {faturaCartao > 0 && !faturaPaga && (
+                        <button onClick={() => { setShowPagarFatura({ cartao: c, fatura: faturaCartao }); setFaturaData(new Date().toISOString().split('T')[0]); setFaturaBancoId('') }}
                           style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid rgba(232,168,12,.25)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
                           Pagar fatura ({fmt(faturaCartao)})
                         </button>
@@ -263,18 +307,8 @@ export default function CartaoPage() {
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
                     {cartoes.map(c => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => setLCartaoId(c.id)}
-                        style={{
-                          padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                          border: `2px solid ${lCartaoId === c.id ? 'var(--accent)' : 'var(--border)'}`,
-                          background: lCartaoId === c.id ? 'var(--accent-dim)' : 'var(--s2)',
-                          color: lCartaoId === c.id ? 'var(--accent)' : 'var(--t1)',
-                          transition: 'all .12s',
-                        }}
-                      >
+                      <button key={c.id} type="button" onClick={() => setLCartaoId(c.id)}
+                        style={{ padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: `2px solid ${lCartaoId === c.id ? 'var(--accent)' : 'var(--border)'}`, background: lCartaoId === c.id ? 'var(--accent-dim)' : 'var(--s2)', color: lCartaoId === c.id ? 'var(--accent)' : 'var(--t1)', transition: 'all .12s' }}>
                         {c.nome}
                       </button>
                     ))}
@@ -298,6 +332,7 @@ export default function CartaoPage() {
           </div>
         </div>
       )}
+
       {/* Modal: pagar fatura */}
       {showPagarFatura && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'flex-end' }} onClick={() => setShowPagarFatura(null)}>
@@ -307,6 +342,23 @@ export default function CartaoPage() {
             <p style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 16 }}>{showPagarFatura.cartao.nome} · {fmt(showPagarFatura.fatura)}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div><label>Data do pagamento</label><input type="date" value={faturaData} onChange={e => setFaturaData(e.target.value)} /></div>
+              {bancos.length > 0 && (
+                <div>
+                  <label style={{ marginBottom: 8, display: 'block' }}>Banco (opcional)</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <button type="button" onClick={() => setFaturaBancoId('')}
+                      style={{ padding: '7px 12px', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `2px solid ${!faturaBancoId ? 'var(--accent)' : 'var(--border)'}`, background: !faturaBancoId ? 'var(--accent-dim)' : 'var(--s2)', color: !faturaBancoId ? 'var(--accent)' : 'var(--t2)' }}>
+                      Geral
+                    </button>
+                    {bancos.map(b => (
+                      <button key={b.id} type="button" onClick={() => setFaturaBancoId(b.id)}
+                        style={{ padding: '7px 12px', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `2px solid ${faturaBancoId === b.id ? (b.cor || 'var(--accent)') : 'var(--border)'}`, background: faturaBancoId === b.id ? `${b.cor || 'var(--accent)'}22` : 'var(--s2)', color: faturaBancoId === b.id ? (b.cor || 'var(--accent)') : 'var(--t2)' }}>
+                        {b.nome}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <p style={{ fontSize: 12, color: 'var(--t3)', background: 'var(--s2)', borderRadius: 10, padding: '10px 12px' }}>
                 O valor da fatura ({fmt(showPagarFatura.fatura)}) será lançado no Controle de Caixa como saída.
               </p>
@@ -322,7 +374,8 @@ export default function CartaoPage() {
       {dlg && (
         <ConfirmModal
           message={dlg.msg}
-          confirmLabel="Excluir"
+          confirmLabel="Confirmar"
+          danger={dlg.danger}
           onConfirm={() => { dlg.onOk(); setDlg(null) }}
           onCancel={() => setDlg(null)}
         />

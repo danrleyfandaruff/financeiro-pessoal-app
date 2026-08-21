@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { PfDespesa } from '@/lib/types'
+import type { PfDespesa, PfBanco } from '@/lib/types'
 import ConfirmModal from '@/components/ConfirmModal'
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -10,13 +10,27 @@ const hoje = () => new Date().toISOString().split('T')[0]
 const RECORRENCIAS = ['mensal', 'semanal', 'quinzenal', 'anual', 'única']
 const CATS = ['Moradia', 'Alimentação', 'Transporte', 'Saúde', 'Educação', 'Lazer', 'Assinatura', 'Dívida/Empréstimo', 'Serviços', 'Outros']
 
+function nextData(date: string, rec: string): string {
+  const d = new Date(date + 'T12:00:00')
+  if (rec === 'semanal') d.setDate(d.getDate() + 7)
+  else if (rec === 'quinzenal') d.setDate(d.getDate() + 15)
+  else if (rec === 'anual') d.setFullYear(d.getFullYear() + 1)
+  else d.setMonth(d.getMonth() + 1)
+  return d.toISOString().split('T')[0]
+}
+
+type PagarStep = 'form' | 'success'
+
 export default function DespesasPage() {
   const supabase = createClient()
   const [lista, setLista] = useState<PfDespesa[]>([])
+  const [bancos, setBancos] = useState<PfBanco[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editando, setEditando] = useState<PfDespesa | null>(null)
   const [showPagar, setShowPagar] = useState<PfDespesa | null>(null)
+  const [pagarStep, setPagarStep] = useState<PagarStep>('form')
+  const [proximoData, setProximoData] = useState('')
   const [saving, setSaving] = useState(false)
   const [dlg, setDlg] = useState<{ msg: string; onOk: () => void } | null>(null)
 
@@ -31,10 +45,15 @@ export default function DespesasPage() {
   // Pagar fields
   const [pagarValor, setPagarValor] = useState('')
   const [pagarData, setPagarData] = useState(hoje())
+  const [pagarBancoId, setPagarBancoId] = useState('')
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from('pf_despesas').select('*').order('data_prevista', { ascending: true })
-    setLista((data as PfDespesa[]) || [])
+    const [d, b] = await Promise.all([
+      supabase.from('pf_despesas').select('*').order('data_prevista', { ascending: true }),
+      supabase.from('pf_bancos').select('*').order('nome'),
+    ])
+    setLista((d.data as PfDespesa[]) || [])
+    setBancos((b.data as PfBanco[]) || [])
     setLoading(false)
   }, [])
 
@@ -55,6 +74,8 @@ export default function DespesasPage() {
     setShowPagar(item)
     setPagarValor(item.tipo === 'fixo' && item.valor != null ? String(item.valor) : '')
     setPagarData(hoje())
+    setPagarBancoId('')
+    setPagarStep('form')
   }
 
   async function salvar() {
@@ -84,9 +105,45 @@ export default function DespesasPage() {
         user_id: user!.id, tipo: 'saida', descricao: showPagar.nome,
         valor: parseFloat(pagarValor), data: pagarData,
         categoria: showPagar.categoria, origem: 'baixa_despesa', referencia_id: showPagar.id,
+        banco_id: pagarBancoId || null,
       }),
     ])
+    await load()
+    setSaving(false)
+    if (showPagar.recorrencia && showPagar.recorrencia !== 'única') {
+      const base = showPagar.data_prevista || pagarData
+      setProximoData(nextData(base, showPagar.recorrencia))
+      setPagarStep('success')
+    } else {
+      setShowPagar(null)
+    }
+  }
+
+  async function criarProximo() {
+    if (!showPagar) return
+    setSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('pf_despesas').insert({
+      user_id: user!.id,
+      nome: showPagar.nome,
+      tipo: showPagar.tipo,
+      valor: showPagar.valor,
+      data_prevista: proximoData,
+      recorrencia: showPagar.recorrencia,
+      categoria: showPagar.categoria,
+      status: 'pendente',
+      ativa: true,
+    })
     setShowPagar(null); setSaving(false); load()
+  }
+
+  async function reabrir(item: PfDespesa) {
+    setSaving(true)
+    await Promise.all([
+      supabase.from('pf_caixa').delete().eq('referencia_id', item.id).eq('origem', 'baixa_despesa'),
+      supabase.from('pf_despesas').update({ status: 'pendente', data_paga: null, valor_pago: null }).eq('id', item.id),
+    ])
+    setSaving(false); load()
   }
 
   function excluir(id: string) {
@@ -100,7 +157,7 @@ export default function DespesasPage() {
   const totalPrev = pendentes.reduce((s, d) => s + Number(d.valor || 0), 0)
   const totalPago = pagas.reduce((s, d) => s + Number(d.valor_pago || d.valor || 0), 0)
 
-  function ItemDespesa({ d, last }: { d: PfDespesa; last: boolean }) {
+  function ItemPendente({ d, last }: { d: PfDespesa; last: boolean }) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: !last ? '1px solid var(--border)' : 'none' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -157,31 +214,29 @@ export default function DespesasPage() {
         </div>
       ) : (
         <>
-          {/* Fixas pendentes */}
           {fixas.length > 0 && (
             <div>
               <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Valor fixo — pendentes</p>
               <div style={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 18, overflow: 'hidden' }}>
-                {fixas.map((d, i) => <ItemDespesa key={d.id} d={d} last={i === fixas.length - 1} />)}
+                {fixas.map((d, i) => <ItemPendente key={d.id} d={d} last={i === fixas.length - 1} />)}
               </div>
             </div>
           )}
 
-          {/* Variáveis pendentes */}
           {variaveis.length > 0 && (
             <div>
               <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Valor variável — pendentes</p>
               <div style={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 18, overflow: 'hidden' }}>
-                {variaveis.map((d, i) => <ItemDespesa key={d.id} d={d} last={i === variaveis.length - 1} />)}
+                {variaveis.map((d, i) => <ItemPendente key={d.id} d={d} last={i === variaveis.length - 1} />)}
               </div>
             </div>
           )}
 
-          {/* Pagas */}
+          {/* Pagas — só Reabrir, sem excluir direto */}
           {pagas.length > 0 && (
             <div>
               <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Pagas</p>
-              <div style={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 18, overflow: 'hidden', opacity: .7 }}>
+              <div style={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 18, overflow: 'hidden', opacity: .8 }}>
                 {pagas.map((d, i) => (
                   <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: i < pagas.length - 1 ? '1px solid var(--border)' : 'none' }}>
                     <div style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--rose-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -192,7 +247,12 @@ export default function DespesasPage() {
                       {d.data_paga && <p style={{ fontSize: 11, color: 'var(--t3)' }}>Pago em {new Date(d.data_paga + 'T12:00:00').toLocaleDateString('pt-BR')}</p>}
                     </div>
                     <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 14, fontWeight: 700, color: 'var(--rose)' }} className="tabular">{fmt(Number(d.valor_pago || d.valor || 0))}</span>
-                    <button onClick={() => excluir(d.id)} style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--s2)', cursor: 'pointer', fontSize: 12 }}>🗑</button>
+                    <button
+                      onClick={() => setDlg({ msg: `Reabrir "${d.nome}"? O lançamento do caixa será removido e a despesa voltará para pendente.`, onOk: () => reabrir(d) })}
+                      style={{ padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--s2)', cursor: 'pointer', fontSize: 11, fontWeight: 600, color: 'var(--t2)', flexShrink: 0 }}
+                    >
+                      ↩ Reabrir
+                    </button>
                   </div>
                 ))}
               </div>
@@ -208,7 +268,6 @@ export default function DespesasPage() {
             <div style={{ width: 40, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 20px' }} />
             <h3 style={{ fontWeight: 700, fontSize: 16, color: 'var(--t1)', marginBottom: 16 }}>{editando ? 'Editar despesa' : 'Nova despesa fixa'}</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {/* tipo */}
               <div>
                 <label style={{ marginBottom: 8, display: 'block' }}>Tipo</label>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -255,27 +314,68 @@ export default function DespesasPage() {
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'flex-end' }} onClick={() => setShowPagar(null)}>
           <div style={{ width: '100%', background: 'var(--s1)', borderRadius: '20px 20px 0 0', padding: '24px 20px 40px' }} onClick={e => e.stopPropagation()}>
             <div style={{ width: 40, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 20px' }} />
-            <h3 style={{ fontWeight: 700, fontSize: 16, color: 'var(--t1)', marginBottom: 4 }}>Confirmar pagamento</h3>
-            <p style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 16 }}>{showPagar.nome}</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label>{showPagar.tipo === 'variavel' ? 'Valor pago (R$) *' : 'Valor pago (R$)'}</label>
-                <input type="number" value={pagarValor} onChange={e => setPagarValor(e.target.value)} placeholder="0,00" inputMode="decimal" />
+
+            {pagarStep === 'form' ? (
+              <>
+                <h3 style={{ fontWeight: 700, fontSize: 16, color: 'var(--t1)', marginBottom: 4 }}>Confirmar pagamento</h3>
+                <p style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 16 }}>{showPagar.nome}</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div>
+                    <label>{showPagar.tipo === 'variavel' ? 'Valor pago (R$) *' : 'Valor pago (R$)'}</label>
+                    <input type="number" value={pagarValor} onChange={e => setPagarValor(e.target.value)} placeholder="0,00" inputMode="decimal" />
+                  </div>
+                  <div><label>Data do pagamento</label><input type="date" value={pagarData} onChange={e => setPagarData(e.target.value)} /></div>
+                  {bancos.length > 0 && (
+                    <div>
+                      <label style={{ marginBottom: 8, display: 'block' }}>Banco (opcional)</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        <button type="button" onClick={() => setPagarBancoId('')}
+                          style={{ padding: '7px 12px', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `2px solid ${!pagarBancoId ? 'var(--accent)' : 'var(--border)'}`, background: !pagarBancoId ? 'var(--accent-dim)' : 'var(--s2)', color: !pagarBancoId ? 'var(--accent)' : 'var(--t2)' }}>
+                          Geral
+                        </button>
+                        {bancos.map(b => (
+                          <button key={b.id} type="button" onClick={() => setPagarBancoId(b.id)}
+                            style={{ padding: '7px 12px', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `2px solid ${pagarBancoId === b.id ? (b.cor || 'var(--accent)') : 'var(--border)'}`, background: pagarBancoId === b.id ? `${b.cor || 'var(--accent)'}22` : 'var(--s2)', color: pagarBancoId === b.id ? (b.cor || 'var(--accent)') : 'var(--t2)' }}>
+                            {b.nome}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <p style={{ fontSize: 12, color: 'var(--t3)', background: 'var(--s2)', borderRadius: 10, padding: '10px 12px' }}>
+                    Ao confirmar, o valor será lançado no Controle de Caixa como saída.
+                  </p>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                    <button onClick={() => setShowPagar(null)} style={{ flex: 1, padding: '13px', border: '1px solid var(--border)', background: 'var(--s2)', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', color: 'var(--t2)' }}>Cancelar</button>
+                    <button onClick={pagar} disabled={saving || !pagarValor} style={{ flex: 1, padding: '13px', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', background: 'var(--rose)', color: '#fff' }}>{saving ? 'Confirmando…' : 'Confirmar pagamento'}</button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '8px 0' }}>
+                <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--rose-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M5 14l6 6L23 8" stroke="var(--rose)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{ fontWeight: 700, fontSize: 16, color: 'var(--t1)', marginBottom: 6 }}>Pagamento confirmado!</p>
+                  <p style={{ fontSize: 13, color: 'var(--t2)' }}>
+                    Esta despesa é <strong>{showPagar.recorrencia}</strong>. Deseja criar a previsão do próximo período?
+                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--t3)', marginTop: 6, background: 'var(--s2)', borderRadius: 8, padding: '6px 12px', display: 'inline-block' }}>
+                    Nova data prevista: {new Date(proximoData + 'T12:00:00').toLocaleDateString('pt-BR')}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: 10, width: '100%', marginTop: 4 }}>
+                  <button onClick={() => setShowPagar(null)} style={{ flex: 1, padding: '13px', border: '1px solid var(--border)', background: 'var(--s2)', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', color: 'var(--t2)' }}>Não obrigado</button>
+                  <button onClick={criarProximo} disabled={saving} style={{ flex: 1, padding: '13px', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', background: 'var(--rose)', color: '#fff' }}>{saving ? 'Criando…' : '+ Criar previsão'}</button>
+                </div>
               </div>
-              <div><label>Data do pagamento</label><input type="date" value={pagarData} onChange={e => setPagarData(e.target.value)} /></div>
-              <p style={{ fontSize: 12, color: 'var(--t3)', background: 'var(--s2)', borderRadius: 10, padding: '10px 12px' }}>
-                Ao confirmar, o valor será lançado automaticamente no Controle de Caixa como saída.
-              </p>
-              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                <button onClick={() => setShowPagar(null)} style={{ flex: 1, padding: '13px', border: '1px solid var(--border)', background: 'var(--s2)', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', color: 'var(--t2)' }}>Cancelar</button>
-                <button onClick={pagar} disabled={saving || !pagarValor} style={{ flex: 1, padding: '13px', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', background: 'var(--rose)', color: '#fff' }}>{saving ? 'Salvando…' : 'Confirmar pagamento'}</button>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}
 
-      {dlg && <ConfirmModal message={dlg.msg} confirmLabel="Excluir" onConfirm={() => { dlg.onOk(); setDlg(null) }} onCancel={() => setDlg(null)} />}
+      {dlg && <ConfirmModal message={dlg.msg} confirmLabel="Confirmar" onConfirm={() => { dlg.onOk(); setDlg(null) }} onCancel={() => setDlg(null)} />}
     </div>
   )
 }

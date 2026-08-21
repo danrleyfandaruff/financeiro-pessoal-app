@@ -45,6 +45,15 @@ export interface PfDespesa {
   criado_em: string
 }
 
+export interface PfBanco {
+  id: string
+  user_id: string
+  nome: string
+  saldo_inicial: number
+  cor: string | null
+  criado_em: string
+}
+
 export interface PfCaixa {
   id: string
   user_id: string
@@ -55,6 +64,7 @@ export interface PfCaixa {
   categoria: string | null
   origem: 'manual' | 'baixa_receita' | 'baixa_despesa' | 'aporte_meta' | 'pagamento_fatura'
   referencia_id: string | null
+  banco_id: string | null
   criado_em: string
 }
 
