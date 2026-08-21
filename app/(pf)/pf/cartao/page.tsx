@@ -38,6 +38,8 @@ export default function CartaoPage() {
   const [lParcelas, setLParcelas] = useState('1')
   const [saving, setSaving] = useState(false)
   const [dlg, setDlg] = useState<{ msg: string; onOk: () => void } | null>(null)
+  const [showPagarFatura, setShowPagarFatura] = useState<{ cartao: typeof cartoes[0]; fatura: number } | null>(null)
+  const [faturaData, setFaturaData] = useState('')
 
   const mes = mesAtual()
 
@@ -102,6 +104,21 @@ export default function CartaoPage() {
   async function excluirLanc(id: string) {
     await supabase.from('pf_lancamentos_cartao').delete().eq('id', id)
     setLancamentos(l => l.filter(x => x.id !== id))
+  }
+
+  async function pagarFatura() {
+    if (!showPagarFatura || !faturaData) return
+    setSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const mesLabel = new Date(mes + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+    await supabase.from('pf_caixa').insert({
+      user_id: user!.id, tipo: 'saida',
+      descricao: `Fatura ${showPagarFatura.cartao.nome} — ${mesLabel}`,
+      valor: showPagarFatura.fatura, data: faturaData,
+      categoria: 'Cartão de crédito', origem: 'pagamento_fatura',
+      referencia_id: showPagarFatura.cartao.id,
+    })
+    setShowPagarFatura(null); setFaturaData(''); setSaving(false)
   }
 
   const faturaTotal = lancamentos.reduce((s, l) => s + Number(l.valor), 0)
@@ -178,8 +195,14 @@ export default function CartaoPage() {
                         <button onClick={() => excluirLanc(l.id)} style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--s2)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}>✕</button>
                       </div>
                     ))}
-                    <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
-                      <button onClick={() => excluirCartao(c.id)} style={{ fontSize: 12, color: 'var(--rose)', background: 'none', border: 'none', cursor: 'pointer' }}>Excluir cartão</button>
+                    <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      {faturaCartao > 0 && (
+                        <button onClick={() => { setShowPagarFatura({ cartao: c, fatura: faturaCartao }); setFaturaData(new Date().toISOString().split('T')[0]) }}
+                          style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid rgba(232,168,12,.25)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
+                          Pagar fatura ({fmt(faturaCartao)})
+                        </button>
+                      )}
+                      <button onClick={() => excluirCartao(c.id)} style={{ fontSize: 12, color: 'var(--rose)', background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>Excluir cartão</button>
                     </div>
                   </div>
                 )}
@@ -275,6 +298,27 @@ export default function CartaoPage() {
           </div>
         </div>
       )}
+      {/* Modal: pagar fatura */}
+      {showPagarFatura && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'flex-end' }} onClick={() => setShowPagarFatura(null)}>
+          <div style={{ width: '100%', background: 'var(--s1)', borderRadius: '20px 20px 0 0', padding: '24px 20px 40px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ width: 40, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 20px' }} />
+            <h3 style={{ fontWeight: 700, fontSize: 16, color: 'var(--t1)', marginBottom: 4 }}>Pagar fatura</h3>
+            <p style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 16 }}>{showPagarFatura.cartao.nome} · {fmt(showPagarFatura.fatura)}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div><label>Data do pagamento</label><input type="date" value={faturaData} onChange={e => setFaturaData(e.target.value)} /></div>
+              <p style={{ fontSize: 12, color: 'var(--t3)', background: 'var(--s2)', borderRadius: 10, padding: '10px 12px' }}>
+                O valor da fatura ({fmt(showPagarFatura.fatura)}) será lançado no Controle de Caixa como saída.
+              </p>
+              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                <button onClick={() => setShowPagarFatura(null)} style={{ flex: 1, padding: '13px', border: '1px solid var(--border)', background: 'var(--s2)', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', color: 'var(--t2)' }}>Cancelar</button>
+                <button onClick={pagarFatura} disabled={saving || !faturaData} style={{ flex: 1, padding: '13px', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#07090f' }}>{saving ? 'Salvando…' : 'Confirmar pagamento'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {dlg && (
         <ConfirmModal
           message={dlg.msg}

@@ -3,179 +3,185 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import type { PfReceita, PfDespesa, PfCartao, PfLancamentoCartao, PfMeta } from '@/lib/types'
+import type { PfCaixa, PfReceita, PfDespesa } from '@/lib/types'
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-function diasRestantesNoMes() {
-  const hoje = new Date()
-  const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0)
-  return fim.getDate() - hoje.getDate() + 1
+function mesStr(offset = 0) {
+  const d = new Date(); d.setMonth(d.getMonth() + offset)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
-
-function mesAtualLabel() {
-  return new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+function mesLabel(m: string) {
+  const [y, mo] = m.split('-'); return new Date(Number(y), Number(mo) - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
 }
 
 export default function PFHomePage() {
   const router = useRouter()
   const supabase = createClient()
   const [nome, setNome] = useState('')
-  const [receitas, setReceitas] = useState<PfReceita[]>([])
-  const [despesas, setDespesas] = useState<PfDespesa[]>([])
-  const [cartoes, setCartoes] = useState<PfCartao[]>([])
-  const [lancamentos, setLancamentos] = useState<PfLancamentoCartao[]>([])
-  const [metas, setMetas] = useState<PfMeta[]>([])
+  const [mes, setMes] = useState(mesStr())
+  const [caixa, setCaixa] = useState<PfCaixa[]>([])
+  const [pendReceit, setPendReceit] = useState<PfReceita[]>([])
+  const [pendDesp, setPendDesp] = useState<PfDespesa[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
+    setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
     const { data: perfil } = await supabase.from('perfis').select('nome').eq('id', user.id).single()
     if (perfil) setNome(perfil.nome?.split(' ')[0] || '')
 
-    const hoje = new Date()
-    const mesStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`
-
-    const [r, d, c, l, m] = await Promise.all([
-      supabase.from('pf_receitas').select('*').eq('ativa', true),
-      supabase.from('pf_despesas').select('*').eq('ativa', true),
-      supabase.from('pf_cartoes').select('*'),
-      supabase.from('pf_lancamentos_cartao').select('*').gte('data', `${mesStr}-01`).lte('data', `${mesStr}-31`),
-      supabase.from('pf_metas').select('*').order('criado_em'),
+    const inicio = `${mes}-01`, fim = `${mes}-31`
+    const [cx, rr, dd] = await Promise.all([
+      supabase.from('pf_caixa').select('*').gte('data', inicio).lte('data', fim),
+      supabase.from('pf_receitas').select('*').eq('status', 'pendente'),
+      supabase.from('pf_despesas').select('*').eq('status', 'pendente'),
     ])
-    setReceitas((r.data as PfReceita[]) || [])
-    setDespesas((d.data as PfDespesa[]) || [])
-    setCartoes((c.data as PfCartao[]) || [])
-    setLancamentos((l.data as PfLancamentoCartao[]) || [])
-    setMetas((m.data as PfMeta[]) || [])
+    setCaixa((cx.data as PfCaixa[]) || [])
+    setPendReceit((rr.data as PfReceita[]) || [])
+    setPendDesp((dd.data as PfDespesa[]) || [])
     setLoading(false)
-  }, [])
+  }, [mes])
 
   useEffect(() => { load() }, [load])
 
-  const totalReceitas = receitas.reduce((s, r) => s + Number(r.valor), 0)
-  const totalDespesas = despesas.reduce((s, d) => s + Number(d.valor), 0)
-  const faturaTotal = lancamentos.reduce((s, l) => s + Number(l.valor), 0)
-  const saldoDisponivel = totalReceitas - totalDespesas - faturaTotal
-  const diasRestantes = diasRestantesNoMes()
-  const gastoDiario = saldoDisponivel > 0 ? saldoDisponivel / diasRestantes : 0
+  function navMes(d: number) {
+    setMes(prev => {
+      const [y, m] = prev.split('-').map(Number)
+      const next = new Date(y, m - 1 + d)
+      return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
+    })
+  }
 
-  const metasAtivas = metas.filter(m => m.valor_atual < m.valor_meta)
+  const entradas   = caixa.filter(r => r.tipo === 'entrada').reduce((s, r) => s + Number(r.valor), 0)
+  const saidas     = caixa.filter(r => r.tipo === 'saida').reduce((s, r) => s + Number(r.valor), 0)
+  const metas      = caixa.filter(r => r.tipo === 'meta').reduce((s, r) => s + Number(r.valor), 0)
+  const resultado  = entradas - saidas - metas
+
+  // por categoria
+  const porCat = caixa.reduce<Record<string, { e: number; s: number }>>((acc, r) => {
+    const k = r.categoria || 'Outros'
+    if (!acc[k]) acc[k] = { e: 0, s: 0 }
+    if (r.tipo === 'entrada') acc[k].e += Number(r.valor)
+    else acc[k].s += Number(r.valor)
+    return acc
+  }, {})
+
+  const totalPrevReceit = pendReceit.reduce((s, r) => s + Number(r.valor), 0)
+  const totalPrevDesp   = pendDesp.reduce((s, d) => s + Number(d.valor || 0), 0)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
       {/* Saudação */}
       {nome && (
         <div>
           <h2 style={{ fontFamily: 'Sora, sans-serif', fontSize: 20, fontWeight: 800, color: 'var(--t1)' }}>
-            Olá, {nome}! 👋
+            Olá, {nome}!
           </h2>
-          <p style={{ fontSize: 13, color: 'var(--t2)', marginTop: 2 }}>{mesAtualLabel()}</p>
+          <p style={{ fontSize: 13, color: 'var(--t2)', marginTop: 2 }}>Resumo financeiro</p>
         </div>
       )}
+
+      {/* Navegação de mês */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 14, padding: '10px 16px' }}>
+        <button onClick={() => navMes(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--t2)', fontSize: 20, lineHeight: 1 }}>‹</button>
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)', textTransform: 'capitalize' }}>{mesLabel(mes)}</span>
+        <button onClick={() => navMes(1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--t2)', fontSize: 20, lineHeight: 1 }}>›</button>
+      </div>
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--t3)' }}>Carregando…</div>
       ) : (
         <>
-          {/* Indicador de gasto diário — destaque principal */}
-          <div style={{
-            background: gastoDiario > 0 ? 'linear-gradient(135deg, #0F1629 0%, #1a2540 100%)' : 'var(--rose-dim)',
-            borderRadius: 22,
-            padding: '24px 24px 20px',
-            color: gastoDiario > 0 ? '#fff' : 'var(--t1)',
-            position: 'relative',
-            overflow: 'hidden',
-          }}>
-            {gastoDiario > 0 && (
-              <div style={{ position: 'absolute', top: -20, right: -20, width: 100, height: 100, borderRadius: '50%', background: 'rgba(232,168,12,.12)' }} />
-            )}
-            <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', opacity: .7, marginBottom: 6 }}>
-              Pode gastar por dia
-            </p>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-              <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 38, fontWeight: 800, color: gastoDiario > 0 ? '#E8A80C' : 'var(--rose)', lineHeight: 1 }}>
-                {fmt(gastoDiario)}
-              </span>
-            </div>
-            <p style={{ fontSize: 12, opacity: .6, marginTop: 6 }}>
-              {diasRestantes} {diasRestantes === 1 ? 'dia restante' : 'dias restantes'} no mês
-              {saldoDisponivel <= 0 && ' · Atenção: despesas excedem receitas'}
-            </p>
-          </div>
-
-          {/* Cards resumo */}
+          {/* Cards principais */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Link href="/pf/receitas" style={{ textDecoration: 'none' }}>
-              <div style={{ background: 'var(--emerald-dim)', border: '1px solid rgba(13,153,101,.2)', borderRadius: 16, padding: '16px 18px' }}>
-                <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--emerald)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 4 }}>Receitas fixas</p>
-                <p style={{ fontFamily: 'Sora, sans-serif', fontSize: 20, fontWeight: 800, color: 'var(--emerald)' }} className="tabular">{fmt(totalReceitas)}</p>
-                <p style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>{receitas.length} {receitas.length === 1 ? 'item' : 'itens'}</p>
+            {[
+              { label: 'Entradas', val: entradas, color: 'var(--emerald)', bg: 'rgba(13,153,101,.06)', border: 'rgba(13,153,101,.2)' },
+              { label: 'Saídas',   val: saidas,   color: 'var(--rose)',    bg: 'var(--rose-dim)',      border: 'rgba(224,48,85,.2)' },
+            ].map(c => (
+              <div key={c.label} style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: 16, padding: '14px 16px' }}>
+                <p style={{ fontSize: 11, color: c.color, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{c.label}</p>
+                <p style={{ fontFamily: 'Sora, sans-serif', fontSize: 19, fontWeight: 800, color: c.color }} className="tabular">{fmt(c.val)}</p>
               </div>
-            </Link>
-            <Link href="/pf/despesas" style={{ textDecoration: 'none' }}>
-              <div style={{ background: 'var(--rose-dim)', border: '1px solid rgba(224,48,85,.2)', borderRadius: 16, padding: '16px 18px' }}>
-                <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--rose)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 4 }}>Despesas fixas</p>
-                <p style={{ fontFamily: 'Sora, sans-serif', fontSize: 20, fontWeight: 800, color: 'var(--rose)' }} className="tabular">{fmt(totalDespesas)}</p>
-                <p style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>{despesas.length} {despesas.length === 1 ? 'item' : 'itens'}</p>
-              </div>
-            </Link>
-            <Link href="/pf/cartao" style={{ textDecoration: 'none' }}>
-              <div style={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 18px' }}>
-                <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--t2)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 4 }}>Fatura do mês</p>
-                <p style={{ fontFamily: 'Sora, sans-serif', fontSize: 20, fontWeight: 800, color: 'var(--t1)' }} className="tabular">{fmt(faturaTotal)}</p>
-                <p style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>{cartoes.length} {cartoes.length === 1 ? 'cartão' : 'cartões'}</p>
-              </div>
-            </Link>
-            <Link href="/pf/metas" style={{ textDecoration: 'none' }}>
-              <div style={{ background: 'var(--accent-dim)', border: '1px solid rgba(232,168,12,.2)', borderRadius: 16, padding: '16px 18px' }}>
-                <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 4 }}>Metas ativas</p>
-                <p style={{ fontFamily: 'Sora, sans-serif', fontSize: 20, fontWeight: 800, color: 'var(--t1)' }}>{metasAtivas.length}</p>
-                <p style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>de {metas.length} total</p>
-              </div>
+            ))}
+          </div>
+
+          {metas > 0 && (
+            <div style={{ background: 'var(--accent-dim)', border: '1px solid rgba(232,168,12,.2)', borderRadius: 16, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600 }}>Aportes em metas</span>
+              <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 700, color: 'var(--accent)' }} className="tabular">{fmt(metas)}</span>
+            </div>
+          )}
+
+          {/* Resultado */}
+          <div style={{ background: '#0F1629', borderRadius: 18, padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,.5)', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 4 }}>Resultado do período</p>
+              <p style={{ fontFamily: 'Sora, sans-serif', fontSize: 26, fontWeight: 800, color: resultado >= 0 ? '#E8A80C' : '#E03055' }} className="tabular">{fmt(resultado)}</p>
+            </div>
+            <Link href="/pf/caixa" style={{ fontSize: 12, color: 'rgba(255,255,255,.4)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+              Ver caixa
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </Link>
           </div>
 
-          {/* Metas em progresso */}
-          {metasAtivas.length > 0 && (
-            <div style={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 18, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--t1)' }}>Progresso das metas</span>
-              </div>
-              {metasAtivas.slice(0, 3).map(m => {
-                const pct = Math.min(100, (m.valor_atual / m.valor_meta) * 100)
-                return (
-                  <div key={m.id} style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--t1)' }}>{m.nome}</span>
-                      <span style={{ fontSize: 13, color: 'var(--t2)' }} className="tabular">{fmt(m.valor_atual)} / {fmt(m.valor_meta)}</span>
+          {/* Por categoria */}
+          {Object.keys(porCat).length > 0 && (
+            <div style={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 18, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Por categoria</p>
+              {Object.entries(porCat)
+                .sort((a, b) => (b[1].e + b[1].s) - (a[1].e + a[1].s))
+                .slice(0, 6)
+                .map(([cat, vals]) => (
+                  <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 13, color: 'var(--t1)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat}</span>
+                    <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+                      {vals.e > 0 && <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--emerald)' }} className="tabular">+{fmt(vals.e)}</span>}
+                      {vals.s > 0 && <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--rose)' }} className="tabular">-{fmt(vals.s)}</span>}
                     </div>
-                    <div style={{ height: 6, background: 'var(--s2)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: m.cor || 'var(--accent)', borderRadius: 3, transition: 'width .4s' }} />
-                    </div>
-                    <p style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>{pct.toFixed(0)}% concluído</p>
                   </div>
-                )
-              })}
-              {metasAtivas.length > 3 && (
-                <Link href="/pf/metas" style={{ display: 'block', padding: '12px 18px', fontSize: 13, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
-                  Ver todas as metas →
+                ))}
+            </div>
+          )}
+
+          {/* Pendências */}
+          {(pendReceit.length > 0 || pendDesp.length > 0) && (
+            <div style={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 18, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Pendências</p>
+              {pendReceit.length > 0 && (
+                <Link href="/pf/receitas" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', textDecoration: 'none' }}>
+                  <div>
+                    <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)' }}>Entradas a receber</p>
+                    <p style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>{pendReceit.length} item{pendReceit.length !== 1 ? 's' : ''} pendente{pendReceit.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 700, color: 'var(--emerald)' }} className="tabular">{fmt(totalPrevReceit)}</p>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ color: 'var(--t3)', marginTop: 2 }}><path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </div>
+                </Link>
+              )}
+              {pendReceit.length > 0 && pendDesp.length > 0 && <div style={{ height: 1, background: 'var(--border)' }} />}
+              {pendDesp.length > 0 && (
+                <Link href="/pf/despesas" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', textDecoration: 'none' }}>
+                  <div>
+                    <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)' }}>Despesas a pagar</p>
+                    <p style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>{pendDesp.length} item{pendDesp.length !== 1 ? 's' : ''} pendente{pendDesp.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 700, color: 'var(--rose)' }} className="tabular">{fmt(totalPrevDesp)}</p>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ color: 'var(--t3)', marginTop: 2 }}><path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </div>
                 </Link>
               )}
             </div>
           )}
 
-          {/* Estado vazio */}
-          {receitas.length === 0 && despesas.length === 0 && (
-            <div style={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 18, padding: '32px 24px', textAlign: 'center' }}>
-              <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--t1)', marginBottom: 6 }}>Configure sua conta pessoal</p>
-              <p style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 20 }}>Adicione suas receitas e despesas fixas para calcular quanto você pode gastar por dia.</p>
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-                <Link href="/pf/receitas" className="btn-primary" style={{ fontSize: 13, padding: '10px 16px' }}>+ Receita</Link>
-                <Link href="/pf/despesas" style={{ fontSize: 13, padding: '10px 16px', background: 'var(--s2)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--t1)', textDecoration: 'none', fontWeight: 500 }}>+ Despesa</Link>
-              </div>
+          {caixa.length === 0 && pendReceit.length === 0 && pendDesp.length === 0 && (
+            <div style={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 18, padding: '40px 24px', textAlign: 'center' }}>
+              <p style={{ fontSize: 24, marginBottom: 8 }}>📊</p>
+              <p style={{ color: 'var(--t2)', fontSize: 14 }}>Nenhuma movimentação neste período.</p>
+              <p style={{ color: 'var(--t3)', fontSize: 12, marginTop: 4 }}>Cadastre entradas ou despesas, ou lance diretamente no caixa.</p>
             </div>
           )}
         </>

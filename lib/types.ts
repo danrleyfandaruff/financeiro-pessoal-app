@@ -19,6 +19,11 @@ export interface PfReceita {
   nome: string
   valor: number
   dia_recebimento: number | null
+  data_prevista: string | null
+  recorrencia: string | null
+  status: 'pendente' | 'recebida'
+  data_recebida: string | null
+  valor_recebido: number | null
   ativa: boolean
   criado_em: string
 }
@@ -27,10 +32,39 @@ export interface PfDespesa {
   id: string
   user_id: string
   nome: string
-  valor: number
+  valor: number | null
+  tipo: 'fixo' | 'variavel'
   dia_vencimento: number | null
+  data_prevista: string | null
+  recorrencia: string | null
   categoria: string | null
+  status: 'pendente' | 'paga'
+  data_paga: string | null
+  valor_pago: number | null
   ativa: boolean
+  criado_em: string
+}
+
+export interface PfCaixa {
+  id: string
+  user_id: string
+  tipo: 'entrada' | 'saida' | 'meta'
+  descricao: string
+  valor: number
+  data: string
+  categoria: string | null
+  origem: 'manual' | 'baixa_receita' | 'baixa_despesa' | 'aporte_meta' | 'pagamento_fatura'
+  referencia_id: string | null
+  criado_em: string
+}
+
+export interface PfAporteMeta {
+  id: string
+  user_id: string
+  meta_id: string
+  valor: number
+  data: string
+  caixa_id: string | null
   criado_em: string
 }
 

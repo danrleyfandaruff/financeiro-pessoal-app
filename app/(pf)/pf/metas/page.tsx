@@ -66,8 +66,24 @@ export default function MetasPage() {
   async function salvarAporte() {
     if (!showAportar || !aporte) return
     setSaving(true)
-    const novoAtual = Number(showAportar.valor_atual) + parseFloat(aporte.replace(',', '.'))
-    await supabase.from('pf_metas').update({ valor_atual: novoAtual }).eq('id', showAportar.id)
+    const valorAporte = parseFloat(aporte.replace(',', '.'))
+    const novoAtual = Number(showAportar.valor_atual) + valorAporte
+    const { data: { user } } = await supabase.auth.getUser()
+    const dataAporte = new Date().toISOString().split('T')[0]
+    // Insere no caixa como saída tipo meta
+    const { data: caixaRow } = await supabase.from('pf_caixa').insert({
+      user_id: user!.id, tipo: 'meta', descricao: `Aporte: ${showAportar.nome}`,
+      valor: valorAporte, data: dataAporte, categoria: showAportar.categoria,
+      origem: 'aporte_meta', referencia_id: showAportar.id,
+    }).select('id').single()
+    await Promise.all([
+      supabase.from('pf_metas').update({ valor_atual: novoAtual }).eq('id', showAportar.id),
+      supabase.from('pf_aportes_meta').insert({
+        user_id: user!.id, meta_id: showAportar.id,
+        valor: valorAporte, data: dataAporte,
+        caixa_id: caixaRow?.id || null,
+      }),
+    ])
     setShowAportar(null); setAporte('')
     await load(); setSaving(false)
   }
