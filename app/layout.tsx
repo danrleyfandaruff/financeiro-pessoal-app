@@ -10,6 +10,10 @@ export const metadata: Metadata = {
     statusBarStyle: 'black-translucent',
     title: 'Restarta',
   },
+  icons: {
+    icon: '/icon',
+    apple: [{ url: '/apple-icon', sizes: '180x180', type: 'image/png' }],
+  },
 }
 
 export const viewport: Viewport = {
