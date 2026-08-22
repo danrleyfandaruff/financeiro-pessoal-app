@@ -122,39 +122,11 @@ export async function GET(request: Request) {
   // ── 1. Busca todos os itens que vencem amanhã ─────────────────────────────
 
   const [pjPagar, pjReceber, pfDespesas, pfReceitas] = await Promise.all([
-    supabase.from('contas_pagar')
-      .select('user_id, descricao, valor, vencimento')
-      .eq('vencimento', data).eq('pago', false),
-
-    supabase.from('contas_receber')
-      .select('user_id, descricao, valor, vencimento')
-      .eq('vencimento', data).eq('pago', false),
-
-    supabase.from('pf_despesas')
-      .select('user_id, nome, valor, data_prevista')
-      .eq('data_prevista', data).eq('status', 'pendente'),
-
-    supabase.from('pf_receitas')
-      .select('user_id, nome, valor, data_prevista')
-      .eq('data_prevista', data).eq('status', 'pendente'),
+    supabase.from('contas_pagar').select('*').eq('vencimento', data).eq('pago', false),
+    supabase.from('contas_receber').select('*').eq('vencimento', data).eq('pago', false),
+    supabase.from('pf_despesas').select('*').eq('data_prevista', data).eq('status', 'pendente'),
+    supabase.from('pf_receitas').select('*').eq('data_prevista', data).eq('status', 'pendente'),
   ])
-
-  // DEBUG temporário — remover após confirmar
-  if (new URL(request.url).searchParams.get('debug') === '1') {
-    const [q_dateOnly, q_statusOnly, q_dateStatus, q_withValor] = await Promise.all([
-      supabase.from('pf_despesas').select('user_id, nome, data_prevista, status').eq('data_prevista', data),
-      supabase.from('pf_despesas').select('user_id, nome, data_prevista, status').eq('status', 'pendente'),
-      supabase.from('pf_despesas').select('user_id, nome, data_prevista, status').eq('data_prevista', data).eq('status', 'pendente'),
-      supabase.from('pf_despesas').select('user_id, nome, valor, data_prevista').eq('data_prevista', data).eq('status', 'pendente'),
-    ])
-    return NextResponse.json({
-      data,
-      q_dateOnly:   q_dateOnly.data,
-      q_statusOnly: q_statusOnly.data,
-      q_dateStatus: q_dateStatus.data,
-      q_withValor:  q_withValor.data,
-    })
-  }
 
   // ── 2. Agrupa por user_id ─────────────────────────────────────────────────
 
