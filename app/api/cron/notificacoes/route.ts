@@ -200,7 +200,7 @@ export async function GET(request: Request) {
 
     try {
       await resend.emails.send({
-        from: 'Restarta Finance <notificacoes@restartafinance.com.br>',
+        from: 'Restarta Finance <onboarding@resend.dev>',
         to: info.email,
         subject: `⏰ ${totalItens} vencimento${totalItens > 1 ? 's' : ''} amanhã — Restarta Finance`,
         html: emailHtml(info.nome, secoes),
