@@ -22,7 +22,7 @@ function svg(size) {
   const h3 = innerH
 
   return `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
-  <rect width="${size}" height="${size}" fill="#0F1629"/>
+  <rect width="${size}" height="${size}" fill="#F2F5F8"/>
   <rect x="${x0}" y="${bottom - h0}" width="${barW}" height="${h0}" rx="${r}" fill="#3D5270"/>
   <rect x="${x1}" y="${bottom - h1}" width="${barW}" height="${h1}" rx="${r}" fill="#E8A80C"/>
   <rect x="${x2}" y="${bottom - h2}" width="${barW}" height="${h2}" rx="${r}" fill="#E8A80C"/>
