@@ -182,5 +182,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, data, enviados: enviados.length, erros, emails_enviados: enviados, usuarios_encontrados: Array.from(porUsuario.keys()) })
+  return NextResponse.json({ ok: true, data, enviados: enviados.length, erros })
 }
