@@ -141,15 +141,18 @@ export async function GET(request: Request) {
 
   // DEBUG temporário — remover após confirmar
   if (new URL(request.url).searchParams.get('debug') === '1') {
-    const allDespesas = await supabase.from('pf_despesas').select('user_id, nome, data_prevista, status').limit(20)
+    const [q_dateOnly, q_statusOnly, q_dateStatus, q_withValor] = await Promise.all([
+      supabase.from('pf_despesas').select('user_id, nome, data_prevista, status').eq('data_prevista', data),
+      supabase.from('pf_despesas').select('user_id, nome, data_prevista, status').eq('status', 'pendente'),
+      supabase.from('pf_despesas').select('user_id, nome, data_prevista, status').eq('data_prevista', data).eq('status', 'pendente'),
+      supabase.from('pf_despesas').select('user_id, nome, valor, data_prevista').eq('data_prevista', data).eq('status', 'pendente'),
+    ])
     return NextResponse.json({
       data,
-      keyUsed: process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 10) + '...',
-      pjPagar:   { data: pjPagar.data,   error: pjPagar.error },
-      pjReceber: { data: pjReceber.data, error: pjReceber.error },
-      pfDespesas:{ data: pfDespesas.data,error: pfDespesas.error },
-      pfReceitas:{ data: pfReceitas.data,error: pfReceitas.error },
-      allDespesas: { data: allDespesas.data, error: allDespesas.error },
+      q_dateOnly:   q_dateOnly.data,
+      q_statusOnly: q_statusOnly.data,
+      q_dateStatus: q_dateStatus.data,
+      q_withValor:  q_withValor.data,
     })
   }
 
