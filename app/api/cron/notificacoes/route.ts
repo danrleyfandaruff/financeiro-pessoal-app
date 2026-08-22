@@ -130,7 +130,7 @@ export async function GET(request: Request) {
       .eq('vencimento', data).eq('pago', false),
 
     supabase.from('pf_despesas')
-      .select('user_id, descricao, valor, data_prevista')
+      .select('user_id, nome, valor, data_prevista')
       .eq('data_prevista', data).eq('status', 'pendente'),
 
     supabase.from('pf_receitas')
@@ -164,7 +164,7 @@ export async function GET(request: Request) {
 
   pjPagar.data?.forEach(r => addItem(r.user_id, 'pjPagar',    { descricao: r.descricao, valor: Number(r.valor), data: r.vencimento }))
   pjReceber.data?.forEach(r => addItem(r.user_id, 'pjReceber', { descricao: r.descricao, valor: Number(r.valor), data: r.vencimento }))
-  pfDespesas.data?.forEach(r => addItem(r.user_id, 'pfDespesas', { descricao: r.descricao, valor: Number(r.valor), data: r.data_prevista }))
+  pfDespesas.data?.forEach(r => addItem(r.user_id, 'pfDespesas', { descricao: r.nome, valor: Number(r.valor), data: r.data_prevista }))
   pfReceitas.data?.forEach(r => addItem(r.user_id, 'pfReceitas', { descricao: r.nome,      valor: Number(r.valor), data: r.data_prevista }))
 
   if (porUsuario.size === 0) {
