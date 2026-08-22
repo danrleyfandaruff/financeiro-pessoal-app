@@ -138,6 +138,17 @@ export async function GET(request: Request) {
       .eq('data_prevista', data).eq('status', 'pendente'),
   ])
 
+  // DEBUG temporário — remover após confirmar
+  if (new URL(request.url).searchParams.get('debug') === '1') {
+    return NextResponse.json({
+      data,
+      pjPagar:   { data: pjPagar.data,   error: pjPagar.error },
+      pjReceber: { data: pjReceber.data, error: pjReceber.error },
+      pfDespesas:{ data: pfDespesas.data,error: pfDespesas.error },
+      pfReceitas:{ data: pfReceitas.data,error: pfReceitas.error },
+    })
+  }
+
   // ── 2. Agrupa por user_id ─────────────────────────────────────────────────
 
   type Item = { descricao: string; valor: number; data: string }
