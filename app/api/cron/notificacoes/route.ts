@@ -140,12 +140,15 @@ export async function GET(request: Request) {
 
   // DEBUG temporário — remover após confirmar
   if (new URL(request.url).searchParams.get('debug') === '1') {
+    const allDespesas = await supabase.from('pf_despesas').select('user_id, nome, data_prevista, status').limit(20)
     return NextResponse.json({
       data,
+      keyUsed: process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 10) + '...',
       pjPagar:   { data: pjPagar.data,   error: pjPagar.error },
       pjReceber: { data: pjReceber.data, error: pjReceber.error },
       pfDespesas:{ data: pfDespesas.data,error: pfDespesas.error },
       pfReceitas:{ data: pfReceitas.data,error: pfReceitas.error },
+      allDespesas: { data: allDespesas.data, error: allDespesas.error },
     })
   }
 
