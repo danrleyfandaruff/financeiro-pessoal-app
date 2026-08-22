@@ -150,22 +150,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, msg: 'Nenhum vencimento amanhã', data })
   }
 
-  // ── 3. Busca emails dos usuários ──────────────────────────────────────────
+  // ── 3. Busca emails e envia ───────────────────────────────────────────────
 
   const userIds = Array.from(porUsuario.keys())
-  const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers({ perPage: 1000 })
-
-  if (usersError) {
-    return NextResponse.json({ error: usersError.message }, { status: 500 })
-  }
-
-  const emailPorId = new Map(users.map(u => [u.id, { email: u.email!, nome: u.user_metadata?.['nome'] || u.user_metadata?.['full_name'] || 'você' }]))
-
-  // ── 4. Envia emails ───────────────────────────────────────────────────────
 
   for (const userId of userIds) {
-    const info = emailPorId.get(userId)
-    if (!info?.email) continue
+    const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(userId)
+    if (userError || !user?.email) continue
+    const info = { email: user.email, nome: user.user_metadata?.['nome'] || user.user_metadata?.['full_name'] || 'você' }
 
     const itens = porUsuario.get(userId)!
     const secoes = [
