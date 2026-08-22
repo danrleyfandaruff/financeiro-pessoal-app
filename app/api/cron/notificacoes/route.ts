@@ -124,7 +124,7 @@ export async function GET(request: Request) {
   const [pjPagar, pjReceber, pfDespesas, pfReceitas] = await Promise.all([
     supabase.from('contas_pagar').select('*').eq('vencimento', data).eq('pago', false),
     supabase.from('contas_receber').select('*').eq('vencimento', data).eq('pago', false),
-    supabase.rpc('cron_despesas_vencendo', { data_alvo: data }),
+    supabase.rpc<{ user_id: string; nome: string; valor: number; data_prevista: string }[]>('cron_despesas_vencendo', { data_alvo: data }),
     supabase.from('pf_receitas').select('*').eq('data_prevista', data).eq('status', 'pendente'),
   ])
 
